@@ -1,0 +1,52 @@
+import paho.mqtt.client as mqtt
+
+############## MQTT configuration #####################
+# MQTT Broker
+mqtt_server = ""  # assign hostname
+mqtt_port = 8883  # assign TLS
+mqtt_user = ""  # assign your username
+mqtt_password = ""  # assign your password
+topic_subscribe = "PC_client"  # Topic subcirbe
+topic_publish = "PC_publish"  # Topic publish
+
+# Create MQTT client
+client = mqtt.Client()
+client.username_pw_set(mqtt_user, mqtt_password)  # assign username and password
+client.tls_set()  # Enable TLS/SSL
+
+# Connecting mqtt
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print("Connected to HiveMQ!")
+        client.subscribe(topic_subscribe)  # Đăng ký vào topic
+    else:
+        print(f"Failed to connect with code {rc}")
+
+# Process mesage
+def on_message(client, userdata, msg):
+    try:
+        if msg.topic == topic_subscribe :
+            message = msg.payload.decode()
+            input_topic = msg.topic
+            print(f"Received message: {message} on topic {input_topic}")
+    except Exception as e:
+        print(f"Error processing message from topic {msg.topic}: {e}")
+
+
+# Assign callback function
+client.on_connect = on_connect
+client.on_message = on_message
+
+# Connecting HiveMQ broker
+print("Connecting to HiveMQ...")
+client.connect(mqtt_server, mqtt_port)
+
+# Loop client
+client.loop_start()
+
+# Publish message
+while True:
+    message = input()
+    client.publish(topic_publish, message)
+    print(f"Published: {message}")
+    input("Press Enter to send another message...")  # Wait input to send message
