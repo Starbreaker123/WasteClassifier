@@ -490,8 +490,8 @@ organic_count, inorganic_count = organize_datasets_maximized()
 
 # Optimized parameters for large datasets
 IMG_SIZE = (224, 224)
-BATCH_SIZE = 64  # Increased for better GPU utilization
-VALIDATION_SPLIT = 0.15  # Reduced to keep more data for training
+BATCH_SIZE = 32  # Reduced for better generalization
+VALIDATION_SPLIT = 0.2  # Increased for better generalization assessment
 
 def create_optimized_data_generators():
     """Create optimized data generators for large datasets"""
@@ -593,35 +593,38 @@ def create_optimized_model():
         # Freeze base model initially for transfer learning
         base_model.trainable = False
 
-        # Optimized classification head for large datasets
+        # Simplified classification head to prevent overfitting
         model = tf.keras.Sequential([
             base_model,
             GlobalAveragePooling2D(),
-            BatchNormalization(),
-            Dropout(0.4),
-            Dense(512, activation='relu'),
+            Dropout(0.5),  # Increased dropout
+            Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01)),
             BatchNormalization(),
             Dropout(0.3),
-            Dense(256, activation='relu'),
-            BatchNormalization(),
-            Dropout(0.2),
-            Dense(128, activation='relu'),
-            Dropout(0.1),
             Dense(1, activation='sigmoid', dtype='float32')
         ])
 
-        # Compile with optimized settings
+        # Compile with optimized settings and gradient clipping
         initial_learning_rate = 0.001
+        # Calculate total steps for cosine decay
+        total_steps = 1000  # Will be updated during training
+        lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=initial_learning_rate,
+            decay_steps=total_steps,
+            alpha=0.1
+        )
+        optimizer = Adam(learning_rate=lr_schedule, clipnorm=1.0)  # Add gradient clipping
         model.compile(
-            optimizer=Adam(learning_rate=initial_learning_rate),
+            optimizer=optimizer,
             loss='binary_crossentropy',
             metrics=['accuracy', 'precision', 'recall']
         )
 
         print("✅ Optimized model created successfully")
-        print("🧠 Architecture: EfficientNetB0 + Enhanced Classification Head")
+        print("🧠 Architecture: EfficientNetB0 + Simplified Classification Head (Anti-Overfitting)")
         print(f"🔢 Total parameters: {model.count_params():,}")
         print(f"🎯 Trainable parameters: {sum([tf.keras.backend.count_params(w) for w in model.trainable_weights]):,}")
+        print("🛡️ Anti-Overfitting: L2 regularization, increased dropout, gradient clipping")
 
         return model
 
@@ -650,13 +653,31 @@ except:
     os.makedirs(checkpoint_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, 'best_optimized_model.keras')
 
+class OverfittingMonitor(tf.keras.callbacks.Callback):
+    """Custom callback to monitor overfitting"""
+    def on_epoch_end(self, epoch, logs=None):
+        if logs is None:
+            logs = {}
+        
+        train_acc = logs.get('accuracy', 0)
+        val_acc = logs.get('val_accuracy', 0)
+        gap = train_acc - val_acc
+        
+        if gap > 0.03:  # 3% gap threshold
+            print(f"\n⚠️ OVERFITTING WARNING: Train-Val gap = {gap:.3f} ({gap*100:.1f}%)")
+        elif gap > 0.05:  # 5% gap threshold
+            print(f"\n🚨 SEVERE OVERFITTING: Train-Val gap = {gap:.3f} ({gap*100:.1f}%)")
+        
+        print(f"Epoch {epoch+1}: Train Acc={train_acc:.4f}, Val Acc={val_acc:.4f}, Gap={gap:.4f}")
+
 def create_advanced_callbacks():
     """Create advanced training callbacks optimized for large datasets"""
 
     callbacks = [
+        OverfittingMonitor(),  # Add custom overfitting monitor
         EarlyStopping(
             monitor='val_accuracy',
-            patience=12,
+            patience=7,  # Reduced to prevent overfitting
             restore_best_weights=True,
             verbose=1,
             min_delta=0.001
@@ -701,10 +722,10 @@ def fine_tune_model(model, train_gen, val_gen, initial_epochs=30):
 
     history_1 = model.fit(
         train_gen,
-        steps_per_epoch=min(1000, train_gen.samples // BATCH_SIZE),  # Limit steps for faster initial training
+        steps_per_epoch=train_gen.samples // BATCH_SIZE,  # Use full dataset
         epochs=initial_epochs,
         validation_data=val_gen,
-        validation_steps=min(200, val_gen.samples // BATCH_SIZE),
+        validation_steps=val_gen.samples // BATCH_SIZE,  # Use full validation set
         callbacks=callbacks,
         class_weight=class_weight_dict,
         verbose=1
@@ -724,7 +745,7 @@ def fine_tune_model(model, train_gen, val_gen, initial_epochs=30):
 
     # Recompile with lower learning rate for fine-tuning
     model.compile(
-        optimizer=Adam(learning_rate=0.0001),  # Lower learning rate
+        optimizer=Adam(learning_rate=0.0001, clipnorm=1.0),  # Lower learning rate with gradient clipping
         loss='binary_crossentropy',
         metrics=['accuracy', 'precision', 'recall']
     )
@@ -763,12 +784,13 @@ def train_model_optimized(model, train_gen, val_gen):
 
     try:
         print("\n" + "="*80)
-        print("🚀 STARTING OPTIMIZED MODEL TRAINING")
+        print("🚀 STARTING ANTI-OVERFITTING MODEL TRAINING")
         print("="*80)
         print(f"📊 Training with {train_gen.samples:,} samples")
         print(f"📊 Validating with {val_gen.samples:,} samples")
         print(f"🌱 Organic samples: {organic_count:,}")
         print(f"🏭 Inorganic samples: {inorganic_count:,}")
+        print("🛡️ Anti-Overfitting measures: Simplified head, L2 reg, gradient clipping, stricter monitoring")
 
         # Execute two-stage training
         history = fine_tune_model(model, train_gen, val_gen, initial_epochs=25)
@@ -1014,7 +1036,7 @@ def plot_advanced_training_results(hist):
         print(f"├── Best validation accuracy: {best_val_acc:.4f} ({best_val_acc*100:.2f}%)")
         print(f"├── Best epoch: {best_epoch}")
         print(f"├── Total epochs trained: {len(epochs)}")
-        print(f"└── Overfitting check: {'✅ Good' if abs(final_train_acc - final_val_acc) < 0.05 else '⚠️ Possible overfitting'}")
+        print(f"└── Overfitting check: {'✅ Good' if abs(final_train_acc - final_val_acc) < 0.03 else '⚠️ Possible overfitting'}")
 
     except Exception as e:
         print(f"Error plotting training results: {e}")
